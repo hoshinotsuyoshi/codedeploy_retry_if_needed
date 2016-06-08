@@ -1,0 +1,65 @@
+#!/usr/bin/env ruby
+
+require 'aws-sdk-core'
+require 'octokit'
+
+DEPLOYMENT_ID = ENV['DEPLOYMENT_ID']
+unless DEPLOYMENT_ID
+  puts '"$DEPLOYMENT_ID" required.'
+  exit 1
+end
+
+GITHUB_LOGIN = ENV['GITHUB_LOGIN']
+unless GITHUB_LOGIN
+  puts '"$GITHUB_LOGIN" required.'
+  exit 1
+end
+
+GITHUB_ACCESS_TOKEN = ENV['GITHUB_ACCESS_TOKEN']
+unless GITHUB_ACCESS_TOKEN
+  puts '"$GITHUB_ACCESS_TOKEN" required.'
+  exit 1
+end
+
+client = Aws::CodeDeploy::Client.new
+
+deployment_info = client.get_deployment(deployment_id: DEPLOYMENT_ID).deployment_info
+
+overview = deployment_info.deployment_overview
+
+if overview.pending.nonzero?
+  # Deploy has not finished yet.
+  exit 0
+end
+
+octokit = Octokit::Client.new(login: GITHUB_LOGIN, access_token: GITHUB_ACCESS_TOKEN)
+
+def retry_deploy!(deployment_info, latest_master_sha)
+  client = Aws::CodeDeploy::Client.new
+  client.create_deployment(
+    application_name: deployment_info.application_name,
+    deployment_group_name: deployment_info.deployment_group_name,
+    revision: {
+      revision_type: deployment_info.revision.revision_type,
+      git_hub_location: {
+        repository: deployment_info.revision.git_hub_location.repository,
+        commit_id: latest_master_sha,
+      },
+    },
+    description: 'Retry by codedeploy_retry_if_needed',
+  )
+end
+
+latest_master_commit_id_sha = octokit.commits(deployment_info.revision.git_hub_location.repository).first.sha
+
+deployed_commit_id_sha = deployment_info.revision.git_hub_location.commit_id
+
+if latest_master_commit_id_sha == deployed_commit_id_sha
+  exit 0
+else
+  Process.fork {
+    sleep 15
+    retry_deploy!(deployment_info, latest_master_commit_id_sha)
+  }
+  exit 1
+end
