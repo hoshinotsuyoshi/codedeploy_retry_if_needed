@@ -59,9 +59,12 @@ deployed_commit_id_sha = deployment_info.revision.git_hub_location.commit_id
 if latest_master_commit_id_sha == deployed_commit_id_sha
   exit 0
 else
-  Process.fork {
-    sleep WAIT_RETRY_DEPLOY.to_i
-    retry_deploy!(deployment_info, latest_master_commit_id_sha)
+  pid = Process.fork {
+    Process.fork {
+      sleep WAIT_RETRY_DEPLOY.to_i
+      retry_deploy!(deployment_info, latest_master_commit_id_sha)
+    }
   }
+  Process.waitpid(pid)
   exit 1
 end
