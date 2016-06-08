@@ -21,6 +21,8 @@ unless GITHUB_ACCESS_TOKEN
   exit 1
 end
 
+WAIT_RETRY_DEPLOY = ENV.fetch('WAIT_RETRY_DEPLOY', 120)
+
 client = Aws::CodeDeploy::Client.new
 
 deployment_info = client.get_deployment(deployment_id: DEPLOYMENT_ID).deployment_info
@@ -58,7 +60,7 @@ if latest_master_commit_id_sha == deployed_commit_id_sha
   exit 0
 else
   Process.fork {
-    sleep 15
+    sleep WAIT_RETRY_DEPLOY.to_i
     retry_deploy!(deployment_info, latest_master_commit_id_sha)
   }
   exit 1
