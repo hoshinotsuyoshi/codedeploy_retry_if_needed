@@ -21,8 +21,6 @@ unless GITHUB_ACCESS_TOKEN
   exit 1
 end
 
-WAIT_RETRY_DEPLOY = ENV.fetch('WAIT_RETRY_DEPLOY', 120)
-
 client = Aws::CodeDeploy::Client.new
 
 deployment_info = client.get_deployment(deployment_id: DEPLOYMENT_ID).deployment_info
@@ -36,22 +34,6 @@ end
 
 octokit = Octokit::Client.new(login: GITHUB_LOGIN, access_token: GITHUB_ACCESS_TOKEN)
 
-def retry_deploy!(deployment_info, latest_master_sha)
-  client = Aws::CodeDeploy::Client.new
-  client.create_deployment(
-    application_name: deployment_info.application_name,
-    deployment_group_name: deployment_info.deployment_group_name,
-    revision: {
-      revision_type: deployment_info.revision.revision_type,
-      git_hub_location: {
-        repository: deployment_info.revision.git_hub_location.repository,
-        commit_id: latest_master_sha,
-      },
-    },
-    description: 'Retry by codedeploy_retry_if_needed',
-  )
-end
-
 latest_master_commit_id_sha = octokit.commits(deployment_info.revision.git_hub_location.repository).first.sha
 
 deployed_commit_id_sha = deployment_info.revision.git_hub_location.commit_id
@@ -59,12 +41,5 @@ deployed_commit_id_sha = deployment_info.revision.git_hub_location.commit_id
 if latest_master_commit_id_sha == deployed_commit_id_sha
   exit 0
 else
-  pid = Process.fork {
-    Process.fork {
-      sleep WAIT_RETRY_DEPLOY.to_i
-      retry_deploy!(deployment_info, latest_master_commit_id_sha)
-    }
-  }
-  Process.waitpid(pid)
   exit 1
 end
